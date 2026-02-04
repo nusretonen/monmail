@@ -1,0 +1,14 @@
+services:
+  monmail-api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - MONMAIL_DB_PATH=/app/data/monmail.db
+      - ALERT_EMAIL_ENABLED=${ALERT_EMAIL_ENABLED:-false}
+      - ALERT_EMAIL_FROM=${ALERT_EMAIL_FROM:-alerts@example.com}
+      - ALERT_EMAIL_TO=${ALERT_EMAIL_TO:-security@example.com}
+      - SMTP_HOST=${SMTP_HOST:-localhost}
+      - SMTP_PORT=${SMTP_PORT:-25}
+    volumes:
+      - ./data:/app/data

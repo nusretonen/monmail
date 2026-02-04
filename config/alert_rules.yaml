@@ -1,0 +1,6 @@
+email:
+  enabled: true
+  severity_threshold: high
+webhook:
+  enabled: false
+  url: ""
