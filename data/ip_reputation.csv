@@ -1,0 +1,3 @@
+ip,reason
+192.0.2.100,Known spam sender
+198.51.100.23,Brute force attempts

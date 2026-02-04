@@ -1,0 +1,21 @@
+rules:
+  - name: Suspicious SPF fail
+    type: mail_spf_fail
+    field: raw
+    pattern: "spf=fail"
+    base_score: 65
+  - name: Suspicious DKIM fail
+    type: mail_dkim_fail
+    field: raw
+    pattern: "dkim=fail"
+    base_score: 65
+  - name: Blacklisted domain query
+    type: dns_blacklisted_domain
+    field: destination
+    pattern: "malicious-domain\\.ru|phish\\.example"
+    base_score: 90
+  - name: Failed login
+    type: auth_failed_login
+    field: raw
+    pattern: "Failed password"
+    base_score: 50

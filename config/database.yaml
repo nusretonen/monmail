@@ -1,0 +1,3 @@
+sqlite:
+  path: ./data/monmail.db
+retention_days: 90
