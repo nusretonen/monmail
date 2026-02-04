@@ -51,12 +51,44 @@ SCHEMA = [
     );
     """,
     """
+    CREATE TABLE IF NOT EXISTS indicators (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        indicator_type TEXT NOT NULL,
+        value TEXT NOT NULL,
+        source TEXT NOT NULL,
+        confidence INTEGER NOT NULL,
+        severity TEXT NOT NULL,
+        first_seen TEXT NOT NULL,
+        last_seen TEXT NOT NULL,
+        expires_at TEXT,
+        tags TEXT,
+        raw_payload TEXT,
+        UNIQUE(indicator_type, value, source)
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sightings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        indicator_id INTEGER NOT NULL,
+        event_id INTEGER NOT NULL,
+        matched_field TEXT NOT NULL,
+        matched_value TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        context TEXT,
+        score_delta INTEGER NOT NULL,
+        UNIQUE(indicator_id, event_id, matched_field, matched_value),
+        FOREIGN KEY(indicator_id) REFERENCES indicators(id),
+        FOREIGN KEY(event_id) REFERENCES events(id)
+    );
+    """,
+    """
     CREATE TABLE IF NOT EXISTS enrichment_cache (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         indicator TEXT NOT NULL,
         indicator_type TEXT NOT NULL,
         value TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        expires_at TEXT
     );
     """,
 ]
@@ -93,6 +125,18 @@ def insert_event(conn: sqlite3.Connection, event: dict) -> int:
     )
     conn.commit()
     return int(cursor.lastrowid)
+
+
+def update_event_metadata(conn: sqlite3.Connection, event_id: int, metadata: str) -> None:
+    conn.execute(
+        """
+        UPDATE events
+        SET metadata = ?
+        WHERE id = ?
+        """,
+        (metadata, event_id),
+    )
+    conn.commit()
 
 
 def insert_detection(conn: sqlite3.Connection, detection: dict) -> int:
@@ -153,6 +197,135 @@ def update_incident(conn: sqlite3.Connection, key: str, severity: str, timestamp
             (key, severity, timestamp, timestamp),
         )
     conn.commit()
+
+
+def upsert_indicator(conn: sqlite3.Connection, indicator: dict) -> int:
+    cursor = conn.execute(
+        """
+        INSERT INTO indicators (
+            indicator_type, value, source, confidence, severity,
+            first_seen, last_seen, expires_at, tags, raw_payload
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(indicator_type, value, source)
+        DO UPDATE SET
+            confidence = excluded.confidence,
+            severity = excluded.severity,
+            last_seen = excluded.last_seen,
+            expires_at = excluded.expires_at,
+            tags = excluded.tags,
+            raw_payload = excluded.raw_payload
+        """,
+        (
+            indicator["indicator_type"],
+            indicator["value"],
+            indicator["source"],
+            indicator["confidence"],
+            indicator["severity"],
+            indicator["first_seen"],
+            indicator["last_seen"],
+            indicator.get("expires_at"),
+            indicator.get("tags"),
+            indicator.get("raw_payload"),
+        ),
+    )
+    conn.commit()
+    if cursor.lastrowid:
+        return int(cursor.lastrowid)
+    row = conn.execute(
+        """
+        SELECT id FROM indicators
+        WHERE indicator_type = ? AND value = ? AND source = ?
+        """,
+        (indicator["indicator_type"], indicator["value"], indicator["source"]),
+    ).fetchone()
+    return int(row["id"]) if row else 0
+
+
+def fetch_indicator_matches(
+    conn: sqlite3.Connection,
+    indicator_type: str,
+    value: str,
+    now: str,
+) -> Iterable[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT *
+        FROM indicators
+        WHERE indicator_type = ?
+          AND value = ?
+          AND (expires_at IS NULL OR expires_at > ?)
+        """,
+        (indicator_type, value, now),
+    ).fetchall()
+
+
+def insert_sighting(conn: sqlite3.Connection, sighting: dict) -> int | None:
+    cursor = conn.execute(
+        """
+        INSERT OR IGNORE INTO sightings (
+            indicator_id, event_id, matched_field, matched_value, timestamp, context, score_delta
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            sighting["indicator_id"],
+            sighting["event_id"],
+            sighting["matched_field"],
+            sighting["matched_value"],
+            sighting["timestamp"],
+            sighting.get("context"),
+            sighting["score_delta"],
+        ),
+    )
+    conn.commit()
+    if cursor.rowcount == 0:
+        return None
+    return int(cursor.lastrowid)
+
+
+def fetch_sightings(conn: sqlite3.Connection, limit: int = 50) -> Iterable[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT sightings.*, indicators.indicator_type, indicators.value, indicators.source
+        FROM sightings
+        JOIN indicators ON sightings.indicator_id = indicators.id
+        ORDER BY sightings.timestamp DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
+def fetch_enrichment_cache(
+    conn: sqlite3.Connection, indicator: str, indicator_type: str, now: str
+) -> sqlite3.Row | None:
+    return conn.execute(
+        """
+        SELECT * FROM enrichment_cache
+        WHERE indicator = ? AND indicator_type = ?
+          AND (expires_at IS NULL OR expires_at > ?)
+        """,
+        (indicator, indicator_type, now),
+    ).fetchone()
+
+
+def upsert_enrichment_cache(conn: sqlite3.Connection, entry: dict) -> int:
+    cursor = conn.execute(
+        """
+        INSERT INTO enrichment_cache (indicator, indicator_type, value, updated_at, expires_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            entry["indicator"],
+            entry["indicator_type"],
+            entry["value"],
+            entry["updated_at"],
+            entry.get("expires_at"),
+        ),
+    )
+    conn.commit()
+    return int(cursor.lastrowid)
 
 
 def fetch_alerts(conn: sqlite3.Connection, limit: int = 50) -> Iterable[sqlite3.Row]:
