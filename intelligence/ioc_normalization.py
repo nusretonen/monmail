@@ -52,14 +52,18 @@ def normalize_event_fields(event: dict, metadata: dict) -> dict:
     source = event.get("source")
     destination = event.get("destination")
     fields = {
-        "src_ip": event.get("source_ip") or metadata.get("client_ip"),
-        "dst_ip": metadata.get("destination_ip") or metadata.get("dst_ip"),
-        "domain": metadata.get("domain") if source == "dns" else None,
-        "helo": metadata.get("helo"),
-        "mail_from": metadata.get("sender") or metadata.get("mail_from"),
-        "rcpt_to": metadata.get("recipient") or metadata.get("rcpt_to"),
-        "url": metadata.get("url"),
-        "attachment_hash": metadata.get("attachment_hash"),
+        "src_ip": event.get("source_ip") or event.get("client_ip") or metadata.get("client_ip"),
+        "dst_ip": event.get("resolved_ip") or metadata.get("destination_ip") or metadata.get("dst_ip"),
+        "domain": event.get("dns_query") or metadata.get("domain") if source == "dns" else None,
+        "helo": event.get("smtp_helo") or metadata.get("helo"),
+        "mail_from": event.get("smtp_mail_from")
+        or metadata.get("sender")
+        or metadata.get("mail_from"),
+        "rcpt_to": event.get("smtp_rcpt_to") or metadata.get("recipient") or metadata.get("rcpt_to"),
+        "url": event.get("url") or metadata.get("url"),
+        "attachment_hash": event.get("attachment_hash") or metadata.get("attachment_hash"),
+        "dns_query": event.get("dns_query"),
+        "dns_server": event.get("dns_server"),
     }
 
     if source == "dns" and not fields["domain"]:
