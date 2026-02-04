@@ -8,6 +8,7 @@ Monmail is a fully local threat intelligence system for mail servers and DNS ser
 - SQLite storage with alert and incident tracking
 - Detection engine (regex + heuristics)
 - Local enrichment (GeoIP placeholder, IP reputation, domain blacklist)
+- IOC normalization, indicator ingestion, and sightings
 - Correlation and alerting
 - FastAPI backend + dashboard UI
 
@@ -37,6 +38,16 @@ Each collector prints parsed events as JSON; you can pipe them into the API:
 ```bash
 python collectors/dns_collector.py --path /var/log/named/query.log | \
   python api/ingest_cli.py --endpoint http://localhost:8000/ingest/dns
+```
+
+## Indicator Ingestion
+
+Send IOC data to the API for CTI matching:
+
+```bash
+curl -X POST http://localhost:8000/indicators/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"indicator_type":"ip","value":"203.0.113.10","source":"misp","confidence":80,"severity":"high"}'
 ```
 
 ## Configuration
